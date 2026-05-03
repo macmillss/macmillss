@@ -259,6 +259,10 @@ tr.add-row-tr td{background:var(--bg);border-top:1px solid var(--border)}
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
     Open CSV
   </button>
+  <button id="btnEnableLive" class="btn btn-primary" style="display:none" onclick="enableLiveSaveFromButton()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    Enable live save
+  </button>
   <button id="btnExport" class="btn btn-ghost" style="display:none" onclick="exportCSV()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     Export
@@ -418,9 +422,9 @@ let cols = [];
 let rows = [];
 let fileName = '';
 let fileHandle = null;
+let liveWriteEnabled = false;
 
 // File System Access API gives true live read/write after the user picks a CSV.
-// It does not use localStorage/sessionStorage/cookies.
 const HAS_FSA = typeof window.showOpenFilePicker === 'function' &&
                 typeof window.showSaveFilePicker === 'function';
 
@@ -528,6 +532,7 @@ function jumpToHist(pos) {
 async function openFile() {
   if (HAS_FSA) {
     try {
+      setStatus('opening');
       const [handle] = await window.showOpenFilePicker({
         multiple: false,
         types: [{
@@ -536,17 +541,20 @@ async function openFile() {
         }]
       });
 
-      const canWrite = await ensureReadWritePermission(handle);
-      if (!canWrite) {
-        fileHandle = null;
-        toast('Write permission was not granted — reopen and allow file editing');
-        return;
-      }
-
       await loadFromFileHandle(handle);
-      toast('Opened with live save enabled');
+
+      // Ask once during the Open CSV click. Some Edge/Chrome contexts still return
+      // denied here; the visible Enable live save button asks again from its own click.
+      const canWrite = await requestReadWritePermission(handle);
+      liveWriteEnabled = !!canWrite;
+      updateModeUI();
+
+      if (liveWriteEnabled) toast('Opened with live save enabled');
+      else toast('Opened read-only — click Enable live save');
     } catch (err) {
       if (err && err.name !== 'AbortError') toast('Open error: ' + err.message);
+    } finally {
+      if (!cols.length) setStatus('ready');
     }
     return;
   }
@@ -554,11 +562,9 @@ async function openFile() {
   document.getElementById('fileInput').click();
 }
 
-async function ensureReadWritePermission(handle) {
-  // Browsers only allow the write permission prompt during a real user action,
-  // so ask immediately after Open CSV / New table instead of waiting for autosave.
+async function requestReadWritePermission(handle) {
   if (!handle || typeof handle.queryPermission !== 'function' || typeof handle.requestPermission !== 'function') {
-    return true;
+    return false;
   }
 
   const opts = { mode: 'readwrite' };
@@ -570,10 +576,32 @@ async function ensureReadWritePermission(handle) {
   }
 }
 
+async function enableLiveSaveFromButton() {
+  if (!fileHandle) {
+    toast('Open a CSV first');
+    return;
+  }
+
+  // This function is tied directly to the user clicking the button, which is the
+  // strongest chance the browser has to show the File Editing permission prompt.
+  const canWrite = await requestReadWritePermission(fileHandle);
+  liveWriteEnabled = !!canWrite;
+  updateModeUI();
+
+  if (!liveWriteEnabled) {
+    toast('Permission not granted — check browser Site permissions → File editing');
+    return;
+  }
+
+  toast('Live save enabled');
+  await doWrite();
+}
+
 async function loadFromFileHandle(handle) {
   const file = await handle.getFile();
   if (!file.name.toLowerCase().endsWith('.csv')) { toast('Only .csv files are supported'); return; }
   fileHandle = handle;
+  liveWriteEnabled = false;
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
@@ -584,6 +612,7 @@ async function handleFileInput(input) {
   if (!file) return;
   input.value = '';
   fileHandle = null;
+  liveWriteEnabled = false;
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
@@ -601,14 +630,11 @@ async function dzDrop(e) {
     try {
       const handle = await item.getAsFileSystemHandle();
       if (handle && handle.kind === 'file') {
-        const canWrite = await ensureReadWritePermission(handle);
-        if (!canWrite) {
-          fileHandle = null;
-          toast('Drag-drop opened read-only — use Open CSV and allow file editing for live save');
-          throw new Error('Write permission not granted');
-        }
         await loadFromFileHandle(handle);
-        toast('Opened with live save enabled');
+        liveWriteEnabled = await requestReadWritePermission(handle);
+        updateModeUI();
+        if (liveWriteEnabled) toast('Opened with live save enabled');
+        else toast('Drag-drop opened read-only — click Enable live save');
         return;
       }
     } catch (_) {
@@ -620,6 +646,7 @@ async function dzDrop(e) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.csv')) { toast('Only .csv files are supported'); return; }
   fileHandle = null;
+  liveWriteEnabled = false;
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
@@ -659,8 +686,11 @@ function onDataReady(histDesc) {
 }
 
 function updateModeUI() {
-  document.getElementById('btnExport').style.display = cols.length ? 'inline-flex' : 'none';
-  setStatus(fileHandle ? 'saved' : 'ready');
+  const hasData = cols.length > 0;
+  document.getElementById('btnExport').style.display = hasData ? 'inline-flex' : 'none';
+  const enableBtn = document.getElementById('btnEnableLive');
+  enableBtn.style.display = (hasData && fileHandle && !liveWriteEnabled) ? 'inline-flex' : 'none';
+  setStatus(liveWriteEnabled ? 'saved' : (fileHandle ? 'readonly' : 'ready'));
 }
 
 function csvText() {
@@ -673,14 +703,14 @@ let writeTimer = null;
 let writeChain = Promise.resolve();
 
 function scheduleWrite() {
-  if (!fileHandle) { setStatus('ready'); return; }
+  if (!fileHandle || !liveWriteEnabled) { updateModeUI(); return; }
   clearTimeout(writeTimer);
   setStatus('writing');
   writeTimer = setTimeout(doWrite, 250);
 }
 
 async function doWrite() {
-  if (!fileHandle) { setStatus('ready'); return; }
+  if (!fileHandle || !liveWriteEnabled) { updateModeUI(); return; }
   const content = csvText();
   writeChain = writeChain.then(async () => {
     const writable = await fileHandle.createWritable();
@@ -692,8 +722,10 @@ async function doWrite() {
     await writeChain;
     setStatus('saved');
   } catch (err) {
+    liveWriteEnabled = false;
+    updateModeUI();
     setStatus('error');
-    toast('Live save blocked — reopen with Open CSV and allow file editing');
+    toast('Live save blocked — click Enable live save');
   }
 }
 
@@ -730,8 +762,8 @@ async function createNewTable() {
           accept: { 'text/csv': ['.csv'] }
         }]
       });
-      const canWrite = await ensureReadWritePermission(fileHandle);
-      if (!canWrite) {
+      liveWriteEnabled = await requestReadWritePermission(fileHandle);
+      if (!liveWriteEnabled) {
         fileHandle = null;
         toast('Write permission was not granted — table was not created');
         return;
@@ -749,6 +781,7 @@ async function createNewTable() {
   }
 
   fileHandle = null;
+  liveWriteEnabled = false;
   fileName = 'untitled.csv';
   cols = colLines;
   rows = [];
@@ -1143,7 +1176,8 @@ function setStatus(state) {
   const text = document.getElementById('sbStatus');
   const map = {
     writing: ['writing', 'Saving…'],
-    saved:   ['',        fileHandle ? 'Saved live to CSV' : 'Ready'],
+    saved:   ['',        liveWriteEnabled ? 'Saved live to CSV' : 'Ready'],
+    readonly:['',        'Read-only until live save is enabled'],
     opening: ['writing', 'Opening…'],
     ready:   ['',        'Ready'],
     error:   ['writing', 'Save blocked'],
