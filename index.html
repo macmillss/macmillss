@@ -283,7 +283,7 @@ tr.add-row-tr td{background:var(--surface-2)}
   </button>
   <button id="btnEnableLive" class="btn btn-primary" style="display:none" onclick="enableLiveSaveFromButton()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-    Enable live save
+    Enable live changes
   </button>
   <button id="btnExport" class="btn btn-ghost" style="display:none" onclick="exportCSV()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -417,7 +417,9 @@ const LM_COL = 'Last Modified';
 
 function nowStr() {
   const d = new Date();
-  return d.toLocaleDateString('en-US') + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const date = d.toLocaleDateString('en-US');
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return date + ' ' + time.replace(' AM', 'am').replace(' PM', 'pm');
 }
 
 function ensureLastModified() {
@@ -427,16 +429,17 @@ function ensureLastModified() {
   }
 }
 
-// ── Pastel group colors ───────────────────────────────────────────────────────
+// ── Dark group colors ─────────────────────────────────────────────────────────
+// Tinted for dark mode so white table text stays readable.
 const PASTELS = [
-  { bg:'#fce7f3', border:'#f9a8d4', badge:'#fbcfe8', text:'#831843' }, // pink
-  { bg:'#ffedd5', border:'#fdba74', badge:'#fed7aa', text:'#7c2d12' }, // orange
-  { bg:'#fef9c3', border:'#fde047', badge:'#fef08a', text:'#713f12' }, // yellow
-  { bg:'#dcfce7', border:'#86efac', badge:'#bbf7d0', text:'#14532d' }, // green
-  { bg:'#dbeafe', border:'#93c5fd', badge:'#bfdbfe', text:'#1e3a5f' }, // blue
-  { bg:'#f3e8ff', border:'#d8b4fe', badge:'#e9d5ff', text:'#581c87' }, // purple
-  { bg:'#ccfbf1', border:'#5eead4', badge:'#99f6e4', text:'#134e4a' }, // teal
-  { bg:'#fee2e2', border:'#fca5a5', badge:'#fecaca', text:'#7f1d1d' }, // red
+  { bg:'rgba(236,72,153,.18)', border:'#ec4899', badge:'rgba(236,72,153,.34)', text:'#f9a8d4' }, // pink
+  { bg:'rgba(249,115,22,.18)', border:'#f97316', badge:'rgba(249,115,22,.34)', text:'#fdba74' }, // orange
+  { bg:'rgba(248,216,64,.16)', border:'#f8d840', badge:'rgba(248,216,64,.30)', text:'#ffe46d' }, // FreqOps yellow
+  { bg:'rgba(34,197,94,.17)', border:'#22c55e', badge:'rgba(34,197,94,.32)', text:'#86efac' }, // green
+  { bg:'rgba(59,130,246,.18)', border:'#3b82f6', badge:'rgba(59,130,246,.34)', text:'#93c5fd' }, // blue
+  { bg:'rgba(168,85,247,.18)', border:'#a855f7', badge:'rgba(168,85,247,.34)', text:'#d8b4fe' }, // purple
+  { bg:'rgba(20,184,166,.18)', border:'#14b8a6', badge:'rgba(20,184,166,.34)', text:'#5eead4' }, // teal
+  { bg:'rgba(239,68,68,.18)', border:'#ef4444', badge:'rgba(239,68,68,.34)', text:'#fca5a5' }, // red
 ];
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -572,7 +575,7 @@ async function openFile() {
       updateModeUI();
 
       if (liveWriteEnabled) toast('Opened with live save enabled');
-      else toast('Opened read-only — click Enable live save');
+      else toast('Opened read-only — click Enable live changes');
     } catch (err) {
       if (err && err.name !== 'AbortError') toast('Open error: ' + err.message);
     } finally {
@@ -599,9 +602,33 @@ async function requestReadWritePermission(handle) {
 }
 
 async function enableLiveSaveFromButton() {
+  // If the table was created in-memory with New table, choose the CSV file now.
+  // This keeps previews/test runs error-free until the user explicitly asks for live writes.
   if (!fileHandle) {
-    toast('Open a CSV first');
-    return;
+    if (!cols.length) {
+      toast('Create or open a table first');
+      return;
+    }
+    if (!HAS_FSA || typeof window.showSaveFilePicker !== 'function') {
+      toast('Live changes need a browser with File System Access — use Export instead');
+      updateModeUI();
+      return;
+    }
+    try {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: fileName || 'untitled.csv',
+        types: [{
+          description: 'CSV files',
+          accept: { 'text/csv': ['.csv'] }
+        }]
+      });
+      fileName = fileHandle.name || fileName || 'untitled.csv';
+      document.getElementById('fileBadge').textContent = fileName;
+    } catch (err) {
+      if (err && err.name !== 'AbortError') toast('Live changes setup error: ' + err.message);
+      updateModeUI();
+      return;
+    }
   }
 
   // This function is tied directly to the user clicking the button, which is the
@@ -615,7 +642,7 @@ async function enableLiveSaveFromButton() {
     return;
   }
 
-  toast('Live save enabled');
+  toast('Live changes enabled');
   await doWrite();
 }
 
@@ -656,7 +683,7 @@ async function dzDrop(e) {
         liveWriteEnabled = await requestReadWritePermission(handle);
         updateModeUI();
         if (liveWriteEnabled) toast('Opened with live save enabled');
-        else toast('Drag-drop opened read-only — click Enable live save');
+        else toast('Drag-drop opened read-only — click Enable live changes');
         return;
       }
     } catch (_) {
@@ -711,8 +738,13 @@ function updateModeUI() {
   const hasData = cols.length > 0;
   document.getElementById('btnExport').style.display = hasData ? 'inline-flex' : 'none';
   const enableBtn = document.getElementById('btnEnableLive');
-  enableBtn.style.display = (hasData && fileHandle && !liveWriteEnabled) ? 'inline-flex' : 'none';
-  setStatus(liveWriteEnabled ? 'saved' : (fileHandle ? 'readonly' : 'ready'));
+
+  // Show the live changes button whenever a table exists but live writes are not active.
+  // For opened CSVs, it requests File Editing permission. For new in-memory tables,
+  // it asks where to save the CSV, then enables live writes.
+  enableBtn.style.display = (hasData && !liveWriteEnabled) ? 'inline-flex' : 'none';
+
+  setStatus(liveWriteEnabled ? 'saved' : (hasData ? 'readonly' : 'ready'));
 }
 
 function csvText() {
@@ -747,7 +779,7 @@ async function doWrite() {
     liveWriteEnabled = false;
     updateModeUI();
     setStatus('error');
-    toast('Live save blocked — click Enable live save');
+    toast('Live changes blocked — click Enable live changes');
   }
 }
 
@@ -775,40 +807,16 @@ async function createNewTable() {
   if (!colLines.length) { toast('Add at least one column'); return; }
   closeOverlay('newTableModal');
 
-  if (HAS_FSA) {
-    try {
-      fileHandle = await window.showSaveFilePicker({
-        suggestedName: 'untitled.csv',
-        types: [{
-          description: 'CSV files',
-          accept: { 'text/csv': ['.csv'] }
-        }]
-      });
-      liveWriteEnabled = await requestReadWritePermission(fileHandle);
-      if (!liveWriteEnabled) {
-        fileHandle = null;
-        toast('Write permission was not granted — table was not created');
-        return;
-      }
-      fileName = fileHandle.name || 'untitled.csv';
-      cols = colLines;
-      rows = [];
-      onDataReady('New table: ' + fileName);
-      await doWrite();
-      toast('Created with live save enabled');
-    } catch (err) {
-      if (err && err.name !== 'AbortError') toast('Create error: ' + err.message);
-    }
-    return;
-  }
-
+  // Create the table in-memory first. This avoids permission errors in preview/test
+  // environments. The user can click Enable live changes afterward to pick a CSV
+  // save location and turn on live writes.
   fileHandle = null;
   liveWriteEnabled = false;
   fileName = 'untitled.csv';
   cols = colLines;
   rows = [];
   onDataReady('New table');
-  toast('Browser fallback created read-only — use Export to save');
+  toast('New table created — click Enable live changes to save live');
 }
 
 // ── Mutations ────────────────────────────────────────────────────────────────
@@ -1156,7 +1164,8 @@ function makeDataRow(row, ri, num, cls, p) {
     let bg = '';
     if (p && c === groupBy) bg = p.bg;
     else if (sortCol && c === sortCol) bg = 'rgba(248,216,64,.08)';
-    const styleAttr = bg ? `style="background:${bg}"` : '';
+    const cellText = p && c === groupBy ? ';color:var(--text)' : '';
+    const styleAttr = bg ? `style="background:${bg}${cellText}"` : '';
     h += `<td ${styleAttr} ondblclick="startEdit(this,'${esc(c)}',${ri})">${makeCellHTML(v, c, ri)}</td>`;
   });
   h += `<td class="td-num"></td></tr>`;
