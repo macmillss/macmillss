@@ -3,18 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DataTable</title>
+<title>FreqTable</title>
+<link rel="icon" href="favicon.ico" sizes="any">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f4f4f5;--surface:#fff;--border:#e4e4e7;--border-light:#f0f0f2;
-  --text:#18181b;--muted:#71717a;--accent:#6366f1;--accent2:#4f46e5;
-  --accent-bg:#eef2ff;--accent-border:#c7d2fe;
-  --group-bg:#f8f8fb;--row-hover:#fafafa;--red:#ef4444;
-  --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
-  --shadow-md:0 4px 16px rgba(0,0,0,.12);
+  --bg:#111112;--surface:#191a1d;--surface-2:#202126;--surface-3:#25262b;
+  --border:#313238;--border-light:#26272c;
+  --text:#f6f4ed;--muted:#a5a7b0;--accent:#f8d840;--accent2:#ffe46d;
+  --accent-bg:rgba(248,216,64,.13);--accent-border:#6f6329;
+  --group-bg:#202126;--row-hover:#24252a;--red:#ff5b5b;
+  --shadow:0 1px 3px rgba(0,0,0,.38),0 1px 2px rgba(0,0,0,.28);
+  --shadow-md:0 12px 32px rgba(0,0,0,.45);
   --r:6px;--r-sm:4px;
 }
+
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   background:var(--bg);color:var(--text);font-size:13px;
   height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -23,8 +26,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);
   padding:0 16px;height:50px;display:flex;align-items:center;gap:8px;
   box-shadow:var(--shadow);flex-shrink:0;z-index:20;position:relative}
-.logo{font-size:14px;font-weight:700;color:var(--accent);display:flex;align-items:center;gap:6px;margin-right:4px}
-.logo svg{width:20px;height:20px}
+.logo{font-size:14px;font-weight:700;color:var(--accent);display:flex;align-items:center;gap:8px;margin-right:6px}
+.logo img{width:20px;height:20px;object-fit:contain;display:block;border-radius:4px;flex-shrink:0}
+.logo .logo-text{display:inline-block;text-transform:uppercase;letter-spacing:.1px}
 .file-badge{font-size:12.5px;font-weight:500;color:var(--muted);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);
   padding:3px 9px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -207,6 +211,29 @@ tr.add-row-tr td{background:var(--bg);border-top:1px solid var(--border)}
   background:#18181b;color:#fff;padding:7px 16px;border-radius:20px;font-size:12.5px;
   opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:400}
 #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── FreqOps dark refinements ── */
+.btn-ghost:hover,.btn-icon:hover{background:var(--surface-3);border-color:#474951}
+.btn-primary{color:#111112;text-shadow:none}
+.file-badge{background:var(--surface-2);color:#d4d4d8}
+.sel-wrap select{background:var(--surface-2);color:var(--text)}
+.sel-wrap select:hover{border-color:#555862}
+thead{background:var(--surface-2)}
+.th-kebab:hover{background:var(--surface-3);color:var(--text)}
+.add-col-btn:hover{background:var(--surface-3);color:var(--accent)}
+tbody tr:hover .td-num{background:var(--surface-3)}
+td.editing input{background:#111112;color:var(--text)}
+.del-row:hover{background:rgba(255,91,91,.16);color:var(--red)}
+tr.add-row-tr td{background:var(--surface-2)}
+.add-row-btn:hover{color:var(--accent);background:var(--surface-3)}
+.cm-item:hover{background:var(--surface-3)}
+.cm-item.cm-danger:hover{background:rgba(255,91,91,.12)}
+.modal-input,.modal-textarea{background:#111112;color:var(--text)}
+#toast{background:#050505;color:var(--text);border:1px solid #33343a;box-shadow:var(--shadow-md)}
+.content::-webkit-scrollbar-thumb{background:#3a3b42}
+.content::-webkit-scrollbar-thumb:hover{background:#555862}
+.sort-arrow{color:var(--accent)}
+
 </style>
 </head>
 <body>
@@ -214,13 +241,8 @@ tr.add-row-tr td{background:var(--bg);border-top:1px solid var(--border)}
 <!-- ── Topbar ── -->
 <header class="topbar">
   <div class="logo">
-    <svg viewBox="0 0 20 20" fill="none">
-      <rect x="2" y="2" width="7" height="7" rx="1.8" fill="currentColor" opacity=".9"/>
-      <rect x="11" y="2" width="7" height="7" rx="1.8" fill="currentColor" opacity=".5"/>
-      <rect x="2" y="11" width="7" height="7" rx="1.8" fill="currentColor" opacity=".5"/>
-      <rect x="11" y="11" width="7" height="7" rx="1.8" fill="currentColor" opacity=".9"/>
-    </svg>
-    DataTable
+    <img src="favicon.ico" alt="" aria-hidden="true">
+    <span class="logo-text">FreqTable</span>
   </div>
   <div class="sep"></div>
   <span class="file-badge" id="fileBadge">No file open</span>
@@ -1133,7 +1155,7 @@ function makeDataRow(row, ri, num, cls, p) {
     // Subtle tint on the sorted-by column
     let bg = '';
     if (p && c === groupBy) bg = p.bg;
-    else if (sortCol && c === sortCol) bg = '#f5f3ff';
+    else if (sortCol && c === sortCol) bg = 'rgba(248,216,64,.08)';
     const styleAttr = bg ? `style="background:${bg}"` : '';
     h += `<td ${styleAttr} ondblclick="startEdit(this,'${esc(c)}',${ri})">${makeCellHTML(v, c, ri)}</td>`;
   });
