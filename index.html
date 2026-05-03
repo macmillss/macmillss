@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataTable</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f4f4f5;--surface:#fff;--border:#e4e4e7;--border-light:#f0f0f2;
+  --text:#18181b;--muted:#71717a;--accent:#6366f1;--accent2:#4f46e5;
+  --accent-bg:#eef2ff;--accent-border:#c7d2fe;
+  --group-bg:#f8f8fb;--row-hover:#fafafa;--red:#ef4444;
+  --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 16px rgba(0,0,0,.12);
+  --r:6px;--r-sm:4px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg);color:var(--text);font-size:13px;
+  height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Topbar ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 16px;height:50px;display:flex;align-items:center;gap:8px;
+  box-shadow:var(--shadow);flex-shrink:0;z-index:20;position:relative}
+.logo{font-size:14px;font-weight:700;color:var(--accent);display:flex;align-items:center;gap:6px;margin-right:4px}
+.logo svg{width:20px;height:20px}
+.file-badge{font-size:12.5px;font-weight:500;color:var(--muted);
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:3px 9px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sep{width:1px;height:20px;background:var(--border);flex-shrink:0;margin:0 2px}
+.spacer{flex:1}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:var(--r-sm);
+  font-size:12.5px;font-weight:500;cursor:pointer;border:1px solid transparent;
+  transition:background .13s,border-color .13s,color .13s,opacity .13s;white-space:nowrap;user-select:none}
+.btn:disabled{opacity:.35;cursor:default;pointer-events:none}
+.btn svg{width:13px;height:13px;flex-shrink:0}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--muted)}
+.btn-ghost:hover{background:var(--bg);color:var(--text);border-color:#d4d4d8}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent2)}
+.btn-icon{padding:5px 7px;border-color:var(--border);background:transparent;color:var(--muted)}
+.btn-icon:hover{background:var(--bg);color:var(--text)}
+
+/* ── Undo/Redo group ── */
+.ur-group{display:flex;align-items:center;position:relative}
+.ur-group .btn-icon{border-radius:0;margin-left:-1px}
+.ur-group .btn-icon:first-child{border-radius:var(--r-sm) 0 0 var(--r-sm);margin-left:0}
+.ur-group .btn-icon:last-child{border-radius:0 var(--r-sm) var(--r-sm) 0}
+
+/* ── History panel ── */
+.hist-panel{position:absolute;top:calc(100% + 6px);left:0;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);
+  width:250px;z-index:50;overflow:hidden;display:none}
+.hist-panel-hdr{padding:8px 12px;font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.5px;color:var(--muted);border-bottom:1px solid var(--border);background:var(--bg)}
+.hist-item{padding:8px 12px;font-size:12.5px;cursor:pointer;display:flex;align-items:center;
+  gap:8px;transition:background .1s;border-bottom:1px solid var(--border-light)}
+.hist-item:last-child{border-bottom:none}
+.hist-item:hover{background:var(--bg)}
+.hist-item.is-current{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.hist-dot{width:7px;height:7px;border-radius:50%;background:var(--accent-border);flex-shrink:0}
+.hist-item.is-current .hist-dot{background:var(--accent)}
+.hist-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-empty{padding:14px;text-align:center;color:var(--muted);font-size:12px}
+
+/* ── Toolbar ── */
+.toolbar{background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 16px;height:42px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.tbar-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.sel-wrap{position:relative;display:inline-flex;align-items:center}
+.sel-wrap select{appearance:none;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:4px 24px 4px 8px;font-size:12.5px;color:var(--text);
+  cursor:pointer;outline:none;min-width:120px;transition:border-color .13s}
+.sel-wrap select:hover{border-color:#a1a1aa}
+.sel-wrap select:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(99,102,241,.12)}
+.sel-wrap::after{content:'';position:absolute;right:7px;top:50%;transform:translateY(-50%);
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid var(--muted);pointer-events:none}
+.stats-lbl{font-size:12px;color:var(--muted)}
+
+/* ── Content ── */
+.content{flex:1;overflow:auto;padding:16px 16px 24px;position:relative}
+.content::-webkit-scrollbar{width:8px;height:8px}
+.content::-webkit-scrollbar-thumb{background:#d4d4d8;border-radius:4px}
+.content::-webkit-scrollbar-thumb:hover{background:#a1a1aa}
+
+/* ── Drop zone ── */
+.drop-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;height:100%;min-height:280px;border:2px dashed var(--border);border-radius:10px;
+  background:var(--surface);cursor:pointer;transition:border-color .2s,background .2s}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--accent);background:var(--accent-bg)}
+.drop-zone svg{color:var(--muted)}
+.drop-zone h2{font-size:16px;font-weight:600}
+.drop-zone p{font-size:13px;color:var(--muted)}
+.drop-zone small{font-size:11.5px;color:var(--muted);opacity:.7}
+
+/* ── Table wrapper ── */
+#tblContainer{display:none}
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+thead{position:sticky;top:0;z-index:5;background:var(--bg)}
+th{padding:0;border-right:1px solid var(--border);border-bottom:2px solid var(--border);
+  font-weight:600;font-size:11.5px;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.4px;position:relative;user-select:none}
+th:last-child{border-right:none}
+.th-num{width:40px}
+.th-add{width:38px}
+.th-inner{display:flex;align-items:center;padding:0 6px 0 10px;height:35px;gap:4px}
+.th-sort-btn{flex:1;display:flex;align-items:center;gap:4px;overflow:hidden;
+  cursor:pointer;min-width:0;padding:2px 0}
+.th-sort-btn:hover .th-name{color:var(--text)}
+.th-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;transition:color .12s}
+.sort-arrow{flex-shrink:0;opacity:0;color:var(--accent);transition:opacity .15s}
+th:hover .sort-arrow,.sort-arrow.on{opacity:1}
+.th-kebab{flex-shrink:0;padding:3px 4px;border-radius:3px;cursor:pointer;color:var(--muted);
+  opacity:0;transition:opacity .15s,background .12s;line-height:0}
+th:hover .th-kebab,.th-kebab.open{opacity:1}
+.th-kebab:hover{background:#e4e4e7;color:var(--text)}
+.th-resize{position:absolute;right:0;top:0;width:4px;height:100%;cursor:col-resize;z-index:2}
+.th-resize:hover,.th-resize.active{background:var(--accent);opacity:.4}
+.add-col-btn{display:flex;align-items:center;justify-content:center;height:35px;
+  cursor:pointer;color:var(--muted);transition:background .12s,color .12s}
+.add-col-btn:hover{background:#ededf0;color:var(--accent)}
+
+/* ── Body ── */
+tbody tr{border-bottom:1px solid var(--border-light)}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover td{background:var(--row-hover)}
+tbody tr:hover .td-num{background:#ededf0}
+td{padding:0;border-right:1px solid var(--border-light);vertical-align:middle}
+td:last-child{border-right:none}
+.td-num{width:40px;min-width:40px;text-align:center;color:var(--muted);font-size:11px;
+  background:var(--bg);border-right:1px solid var(--border);user-select:none}
+.cell-v{padding:5px 10px;min-height:33px;display:flex;align-items:center;gap:4px;cursor:text}
+.cell-v span.cv{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.del-row{flex-shrink:0;width:16px;height:16px;border-radius:3px;display:none;
+  align-items:center;justify-content:center;color:var(--muted);cursor:pointer;font-size:10px;font-weight:700}
+tr:hover .del-row{display:flex}
+.del-row:hover{background:#fee2e2;color:var(--red)}
+td.editing{padding:0}
+td.editing input{width:100%;min-height:33px;padding:5px 10px;border:none;
+  outline:2px solid var(--accent);outline-offset:-2px;font-size:13px;
+  font-family:inherit;background:#fff;color:var(--text);display:block}
+
+/* ── Group rows ── */
+tr.g-hdr td{border-right:none}
+.g-cell{display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;user-select:none}
+.g-arrow{width:16px;height:16px;border-radius:3px;
+  display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .15s}
+.g-arrow.closed{transform:rotate(-90deg)}
+.g-lbl{font-weight:600;font-size:12px}
+.g-lbl:first-of-type{opacity:.65;font-weight:500}
+.g-cnt{border-radius:9px;padding:1px 8px;font-size:11px;font-weight:700}
+tr.g-row-hidden{display:none}
+
+/* ── Add row ── */
+tr.add-row-tr td{background:var(--bg);border-top:1px solid var(--border)}
+.add-row-btn{display:flex;align-items:center;gap:6px;padding:6px 14px;
+  color:var(--muted);cursor:pointer;font-size:12.5px;transition:color .12s,background .12s;user-select:none}
+.add-row-btn:hover{color:var(--accent);background:#f0f0f4}
+
+/* ── Column menu ── */
+#colMenu{position:fixed;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);box-shadow:var(--shadow-md);width:190px;z-index:200;
+  overflow:hidden;padding:4px 0;display:none}
+.cm-item{display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:12.5px;
+  cursor:pointer;transition:background .1s;color:var(--text)}
+.cm-item:hover{background:var(--bg)}
+.cm-item svg{width:13px;height:13px;flex-shrink:0;color:var(--muted)}
+.cm-item.cm-danger{color:var(--red)}
+.cm-item.cm-danger:hover{background:#fef2f2}
+.cm-item.cm-danger svg{color:var(--red)}
+.cm-sep{height:1px;background:var(--border);margin:3px 0}
+
+/* ── Modals ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.32);display:none;
+  align-items:center;justify-content:center;z-index:300;backdrop-filter:blur(2px)}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:10px;box-shadow:var(--shadow-md);
+  padding:24px;width:360px;max-width:94vw}
+.modal-title{font-size:15px;font-weight:700;margin-bottom:16px}
+.modal-lbl{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.4px;display:block;margin:12px 0 5px}
+.modal-lbl:first-of-type{margin-top:0}
+.modal-input{width:100%;border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:7px 10px;font-size:13px;outline:none;font-family:inherit;transition:border-color .13s,box-shadow .13s}
+.modal-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(99,102,241,.15)}
+.modal-textarea{width:100%;border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:7px 10px;font-size:13px;font-family:inherit;outline:none;resize:vertical;
+  min-height:110px;transition:border-color .13s}
+.modal-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(99,102,241,.15)}
+.modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.modal-hint{font-size:11.5px;color:var(--muted);margin-top:8px}
+
+/* ── Status bar ── */
+.statusbar{background:var(--surface);border-top:1px solid var(--border);height:28px;
+  display:flex;align-items:center;padding:0 16px;gap:14px;flex-shrink:0;font-size:11.5px;color:var(--muted)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0}
+.status-dot.writing{background:#f59e0b}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:36px;left:50%;transform:translateX(-50%) translateY(14px);
+  background:#18181b;color:#fff;padding:7px 16px;border-radius:20px;font-size:12.5px;
+  opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:400}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<!-- ── Topbar ── -->
+<header class="topbar">
+  <div class="logo">
+    <svg viewBox="0 0 20 20" fill="none">
+      <rect x="2" y="2" width="7" height="7" rx="1.8" fill="currentColor" opacity=".9"/>
+      <rect x="11" y="2" width="7" height="7" rx="1.8" fill="currentColor" opacity=".5"/>
+      <rect x="2" y="11" width="7" height="7" rx="1.8" fill="currentColor" opacity=".5"/>
+      <rect x="11" y="11" width="7" height="7" rx="1.8" fill="currentColor" opacity=".9"/>
+    </svg>
+    DataTable
+  </div>
+  <div class="sep"></div>
+  <span class="file-badge" id="fileBadge">No file open</span>
+  <div class="sep"></div>
+
+  <!-- Undo / Redo / History -->
+  <div class="ur-group">
+    <button id="btnUndo" class="btn btn-icon" onclick="undoAction()" disabled title="Undo (Ctrl+Z)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14">
+        <path d="M3 7h10a6 6 0 0 1 0 12H7"/><polyline points="7 3 3 7 7 11"/>
+      </svg>
+    </button>
+    <button id="btnRedo" class="btn btn-icon" onclick="redoAction()" disabled title="Redo (Ctrl+Y)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14">
+        <path d="M21 7H11a6 6 0 0 0 0 12h6"/><polyline points="17 3 21 7 17 11"/>
+      </svg>
+    </button>
+    <button id="btnHistBtn" class="btn btn-icon" onclick="toggleHist(event)" title="Change history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="14" height="14">
+        <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14.5"/>
+      </svg>
+    </button>
+    <!-- History panel anchored to the ur-group -->
+    <div id="histPanel" class="hist-panel">
+      <div class="hist-panel-hdr">Change History</div>
+      <div id="histList"></div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+  <button class="btn btn-ghost" onclick="showNewTableModal()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    New table
+  </button>
+  <button class="btn btn-ghost" onclick="openFile()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    Open CSV
+  </button>
+  <button id="btnExport" class="btn btn-ghost" style="display:none" onclick="exportCSV()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Export
+  </button>
+  <!-- fallback file input for standalone (file://) mode -->
+  <input id="fileInput" type="file" accept=".csv" style="display:none" onchange="handleFileInput(this)">
+</header>
+
+<!-- ── Toolbar ── -->
+<div class="toolbar">
+  <span class="tbar-label">Group by</span>
+  <div class="sel-wrap">
+    <select id="groupSel" onchange="applyView()">
+      <option value="">None</option>
+    </select>
+  </div>
+  <div class="sep"></div>
+  <span class="tbar-label">Sort by</span>
+  <div class="sel-wrap">
+    <select id="sortColSel" onchange="applyView()">
+      <option value="">None</option>
+    </select>
+  </div>
+  <div class="sel-wrap" style="min-width:88px">
+    <select id="sortDirSel" onchange="applyView()">
+      <option value="asc">A → Z</option>
+      <option value="desc">Z → A</option>
+    </select>
+  </div>
+  <div class="spacer"></div>
+  <span class="stats-lbl" id="statsLbl"></span>
+</div>
+
+<!-- ── Content ── -->
+<main class="content" id="content">
+  <!-- Drop zone: always in DOM, just hidden when data is loaded -->
+  <div id="dropZone" class="drop-zone"
+    onclick="openFile()"
+    ondragover="dzOver(event)" ondragleave="dzLeave()" ondrop="dzDrop(event)">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/>
+    </svg>
+    <h2>Open a CSV file</h2>
+    <p>Click to browse or drag &amp; drop a .csv here</p>
+    <small>Or create a new table with the button above</small>
+  </div>
+  <!-- Table container: separate element, never contains dropZone -->
+  <div id="tblContainer"></div>
+</main>
+
+<!-- ── Status bar ── -->
+<div class="statusbar">
+  <span class="status-dot" id="statusDot"></span>
+  <span id="sbStatus">Ready</span>
+  <div class="sep"></div>
+  <span id="sbRows">—</span>
+  <span id="sbCols">—</span>
+  <span id="sbGroups"></span>
+</div>
+
+<!-- ── Column context menu ── -->
+<div id="colMenu">
+  <div class="cm-item" onclick="cm_sort('asc')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="12" y2="18"/></svg>
+    Sort A → Z
+  </div>
+  <div class="cm-item" onclick="cm_sort('desc')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="12" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg>
+    Sort Z → A
+  </div>
+  <div class="cm-sep"></div>
+  <div class="cm-item" onclick="cm_rename()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    Rename column
+  </div>
+  <div class="cm-item" onclick="cm_insert('left')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><polyline points="4 9 1 12 4 15"/></svg>
+    Insert column left
+  </div>
+  <div class="cm-item" onclick="cm_insert('right')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/><polyline points="20 9 23 12 20 15"/></svg>
+    Insert column right
+  </div>
+  <div class="cm-sep"></div>
+  <div class="cm-item cm-danger" onclick="cm_delete()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+    Delete column
+  </div>
+</div>
+
+<!-- ── New Table Modal ── -->
+<div id="newTableModal" class="overlay" onclick="overlayBgClick(event,'newTableModal')">
+  <div class="modal">
+    <div class="modal-title">New Table</div>
+    <label class="modal-lbl">Columns (one per line)</label>
+    <textarea id="ntCols" class="modal-textarea">ID
+Name
+Type
+Value</textarea>
+    <p class="modal-hint">You'll choose where to save the CSV file next.</p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeOverlay('newTableModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="createNewTable()">Choose location →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Prompt Modal (rename / add column) ── -->
+<div id="promptModal" class="overlay" onclick="overlayBgClick(event,'promptModal')">
+  <div class="modal">
+    <div class="modal-title" id="promptTitle">Enter name</div>
+    <label class="modal-lbl" id="promptLbl">Name</label>
+    <input id="promptInput" class="modal-input">
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeOverlay('promptModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="commitPrompt()">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ── Capability detection ──────────────────────────────────────────────────────
+// File System Access API works on HTTPS and localhost (Chrome/Edge 86+).
+// Falls back gracefully to file-input + export on file:// or Firefox.
+const HAS_FSA = typeof window.showOpenFilePicker === 'function';
+
+// ── Last Modified ─────────────────────────────────────────────────────────────
+const LM_COL = 'Last Modified';
+
+function nowStr() {
+  const d = new Date();
+  return d.toLocaleDateString('en-US') + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function ensureLastModified() {
+  if (!cols.includes(LM_COL)) {
+    cols.push(LM_COL);
+    rows.forEach(r => { if (!(LM_COL in r)) r[LM_COL] = ''; });
+  }
+}
+
+// ── Pastel group colors ───────────────────────────────────────────────────────
+const PASTELS = [
+  { bg:'#fce7f3', border:'#f9a8d4', badge:'#fbcfe8', text:'#831843' }, // pink
+  { bg:'#ffedd5', border:'#fdba74', badge:'#fed7aa', text:'#7c2d12' }, // orange
+  { bg:'#fef9c3', border:'#fde047', badge:'#fef08a', text:'#713f12' }, // yellow
+  { bg:'#dcfce7', border:'#86efac', badge:'#bbf7d0', text:'#14532d' }, // green
+  { bg:'#dbeafe', border:'#93c5fd', badge:'#bfdbfe', text:'#1e3a5f' }, // blue
+  { bg:'#f3e8ff', border:'#d8b4fe', badge:'#e9d5ff', text:'#581c87' }, // purple
+  { bg:'#ccfbf1', border:'#5eead4', badge:'#99f6e4', text:'#134e4a' }, // teal
+  { bg:'#fee2e2', border:'#fca5a5', badge:'#fecaca', text:'#7f1d1d' }, // red
+];
+
+// ── State ────────────────────────────────────────────────────────────────────
+let cols = [];
+let rows = [];
+let fileName = '';
+let filePath = '';       // absolute path on disk (server mode only)
+
+// View state
+let groupBy  = '';
+let sortCol  = '';
+let sortDir  = 'asc';
+let collapsed = {};      // groupKey → bool
+
+// Editing state
+let editCell = null;     // { td, col, ri }
+
+// Active column menu target
+let menuCol = -1;
+
+// ── History ──────────────────────────────────────────────────────────────────
+const MAX_HIST = 11;
+let hist    = [];   // [{cols, rows, desc}, ...]
+let histPos = -1;
+
+function pushHist(desc) {
+  // Truncate any forward redo states
+  hist = hist.slice(0, histPos + 1);
+  hist.push({ cols: deepClone(cols), rows: deepClone(rows), desc });
+  if (hist.length > MAX_HIST) hist.shift();
+  histPos = hist.length - 1;
+  updateUndoUI();
+  renderHistPanel();
+}
+
+function applySnap(pos) {
+  const s = hist[pos];
+  cols = deepClone(s.cols);
+  rows = deepClone(s.rows);
+  // Sanitize view state in case grouped/sorted col was removed
+  if (groupBy && !cols.includes(groupBy)) groupBy = '';
+  if (sortCol && !cols.includes(sortCol)) sortCol = '';
+  populateSelects();
+  render();
+  scheduleWrite();
+  updateUndoUI();
+  renderHistPanel();
+}
+
+function undoAction() {
+  if (histPos <= 0) return;
+  const desc = hist[histPos].desc;
+  histPos--;
+  applySnap(histPos);
+  toast('Undo: ' + desc);
+}
+
+function redoAction() {
+  if (histPos >= hist.length - 1) return;
+  histPos++;
+  applySnap(histPos);
+  toast('Redo: ' + hist[histPos].desc);
+}
+
+function updateUndoUI() {
+  const u = document.getElementById('btnUndo');
+  const r = document.getElementById('btnRedo');
+  u.disabled = histPos <= 0;
+  r.disabled = histPos >= hist.length - 1;
+  u.title = histPos > 0
+    ? 'Undo: ' + hist[histPos].desc + '  (Ctrl+Z)'
+    : 'Nothing to undo  (Ctrl+Z)';
+  r.title = histPos < hist.length - 1
+    ? 'Redo: ' + hist[histPos + 1].desc + '  (Ctrl+Y)'
+    : 'Nothing to redo  (Ctrl+Y)';
+}
+
+function toggleHist(e) {
+  e.stopPropagation();
+  const p = document.getElementById('histPanel');
+  p.style.display = p.style.display === 'block' ? 'none' : 'block';
+}
+
+function renderHistPanel() {
+  const list = document.getElementById('histList');
+  if (!hist.length) {
+    list.innerHTML = '<div class="hist-empty">No changes yet</div>';
+    return;
+  }
+  let html = '';
+  for (let i = hist.length - 1; i >= 0; i--) {
+    const cur = i === histPos;
+    html += `<div class="hist-item${cur ? ' is-current' : ''}" onclick="jumpToHist(${i})">
+      <span class="hist-dot"></span>
+      <span class="hist-label">${esc(hist[i].desc)}</span>
+      ${cur ? '<span style="font-size:10px;opacity:.55">now</span>' : ''}
+    </div>`;
+  }
+  list.innerHTML = html;
+}
+
+function jumpToHist(pos) {
+  histPos = pos;
+  applySnap(pos);
+  document.getElementById('histPanel').style.display = 'none';
+  toast('Jumped to: ' + hist[pos].desc);
+}
+
+// ── Server API helper ─────────────────────────────────────────────────────────
+async function api(endpoint, body) {
+  try {
+    const res = await fetch('/api/' + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    return await res.json();
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// ── File I/O ──────────────────────────────────────────────────────────────────
+async function openFile() {
+  if (IS_SERVER) {
+    // Server mode: native OS file dialog via Python/tkinter
+    setStatus('opening');
+    const r = await api('open-dialog', {});
+    setStatus('ready');
+    if (r.cancelled) return;
+    if (r.error) { toast('Error: ' + r.error); return; }
+    filePath = r.path;
+    fileName = r.name;
+    parseAndLoad(r.content, 'Open ' + fileName);
+  } else {
+    // Standalone mode: use hidden file input
+    document.getElementById('fileInput').click();
+  }
+}
+
+// Fallback for standalone (file://) mode
+async function handleFileInput(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  filePath = '';
+  fileName = file.name;
+  const text = await file.text();
+  parseAndLoad(text, 'Open ' + fileName);
+  if (!IS_SERVER) toast('Standalone mode — use Export to save changes');
+}
+
+function dzOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('drag'); }
+function dzLeave() { document.getElementById('dropZone').classList.remove('drag'); }
+async function dzDrop(e) {
+  e.preventDefault();
+  dzLeave();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.csv')) { toast('Only .csv files are supported'); return; }
+  filePath = '';
+  fileName = file.name;
+  const text = await file.text();
+  parseAndLoad(text, 'Open ' + fileName);
+  if (!IS_SERVER) toast('Drag-drop is read-only here — use Export to save');
+}
+
+function parseAndLoad(text, histDesc) {
+  const raw = csvParse(text);
+  if (!raw.length) { toast('File is empty'); return; }
+  cols = raw[0].map(String);
+  rows = raw.slice(1)
+    .filter(r => r.some(c => c !== ''))
+    .map(r => {
+      const o = {};
+      cols.forEach((c, i) => { o[c] = String(r[i] ?? ''); });
+      return o;
+    });
+  onDataReady(histDesc);
+}
+
+function onDataReady(histDesc) {
+  ensureLastModified();
+  collapsed = {};
+  groupBy   = '';
+  sortCol   = '';
+  sortDir   = 'asc';
+  hist      = [];
+  histPos   = -1;
+  document.getElementById('fileBadge').textContent = fileName || 'untitled.csv';
+  document.getElementById('groupSel').value   = '';
+  document.getElementById('sortColSel').value = '';
+  document.getElementById('sortDirSel').value = 'asc';
+  pushHist(histDesc);
+  populateSelects();
+  render();
+  updateModeUI();
+}
+
+function updateModeUI() {
+  // Show Export button in standalone mode or when no file path (drag-drop)
+  const showExport = !IS_SERVER || !filePath;
+  document.getElementById('btnExport').style.display = (cols.length && showExport) ? 'inline-flex' : 'none';
+}
+
+// ── Write to disk (server mode) ───────────────────────────────────────────────
+let writeTimer = null;
+
+function scheduleWrite() {
+  if (!IS_SERVER || !filePath) return;
+  clearTimeout(writeTimer);
+  setStatus('writing');
+  writeTimer = setTimeout(doWrite, 400);
+}
+
+async function doWrite() {
+  const lines = [cols.map(csvCell).join(',')];
+  rows.forEach(r => lines.push(cols.map(c => csvCell(r[c] ?? '')).join(',')));
+  const r = await api('write', { path: filePath, content: lines.join('\r\n') });
+  if (r.error) { setStatus('error'); toast('Save error: ' + r.error); }
+  else setStatus('saved');
+}
+
+// Export (standalone fallback)
+function exportCSV() {
+  const lines = [cols.map(csvCell).join(',')];
+  rows.forEach(r => lines.push(cols.map(c => csvCell(r[c] ?? '')).join(',')));
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: fileName || 'export.csv'
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Exported ' + (fileName || 'export.csv'));
+}
+
+// ── New table ─────────────────────────────────────────────────────────────────
+function showNewTableModal() {
+  openOverlay('newTableModal');
+  setTimeout(() => document.getElementById('ntCols').focus(), 60);
+}
+
+async function createNewTable() {
+  const colLines = document.getElementById('ntCols').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  if (!colLines.length) { toast('Add at least one column'); return; }
+  closeOverlay('newTableModal');
+
+  if (IS_SERVER) {
+    // Pick a save location via native dialog
+    const r = await api('save-dialog', { name: 'untitled.csv' });
+    if (r.cancelled) return;
+    if (r.error) { toast('Error: ' + r.error); return; }
+    filePath = r.path;
+    fileName = r.name;
+    cols = colLines;
+    rows = [];
+    onDataReady('New table: ' + fileName);
+    await doWrite();
+  } else {
+    // Standalone: create in memory, let user Export
+    filePath = '';
+    fileName = 'untitled.csv';
+    cols = colLines;
+    rows = [];
+    onDataReady('New table');
+    toast('Created in memory — use Export to save as a file');
+  }
+}
+
+// ── Mutations (every one calls render + scheduleWrite) ────────────────────────
+
+// Cell edit
+function startEdit(td, col, ri) {
+  if (editCell) commitEdit();
+  const val = rows[ri][col] ?? '';
+  td.classList.add('editing');
+  td.innerHTML = `<input type="text" value="${esc(val)}">`;
+  const inp = td.querySelector('input');
+  inp.focus(); inp.select();
+  editCell = { td, col, ri };
+  inp.addEventListener('blur',    () => commitEdit());
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); commitEdit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const allTds = [...td.closest('tr').querySelectorAll('td:not(.td-num)')];
+      const idx = allTds.indexOf(td);
+      commitEdit();
+      const next = allTds[e.shiftKey ? idx - 1 : idx + 1];
+      if (next) {
+        // find col name by position
+        const colIdx = allTds.indexOf(next);
+        if (colIdx >= 0 && colIdx < cols.length) {
+          next.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        }
+      }
+    }
+  });
+}
+
+function commitEdit() {
+  if (!editCell) return;
+  const { td, col, ri } = editCell;
+  editCell = null;
+  const inp = td.querySelector('input');
+  if (!inp) return;
+  const newVal = inp.value;
+  const oldVal = rows[ri][col] ?? '';
+  td.classList.remove('editing');
+  if (newVal !== oldVal) {
+    rows[ri][col] = newVal;
+    // Auto-update Last Modified (but not when editing LM itself)
+    if (col !== LM_COL) {
+      rows[ri][LM_COL] = nowStr();
+      // Also refresh the LM cell in the DOM if visible
+      const tds = [...td.closest('tr').querySelectorAll('td:not(.td-num)')];
+      const lmIdx = cols.indexOf(LM_COL);
+      if (lmIdx >= 0 && tds[lmIdx]) {
+        tds[lmIdx].innerHTML = makeCellHTML(rows[ri][LM_COL], LM_COL, ri);
+      }
+    }
+    pushHist(`Edit "${col}"`);
+    scheduleWrite();
+  }
+  td.innerHTML = makeCellHTML(newVal, col, ri);
+}
+
+function cancelEdit() {
+  if (!editCell) return;
+  const { td, col, ri } = editCell;
+  editCell = null;
+  const val = rows[ri][col] ?? '';
+  td.classList.remove('editing');
+  td.innerHTML = makeCellHTML(val, col, ri);
+}
+
+function makeCellHTML(val, col, ri) {
+  return `<div class="cell-v"><span class="cv" title="${esc(val)}">${esc(val)}</span><span class="del-row" onclick="deleteRow(${ri},event)" title="Delete row">✕</span></div>`;
+}
+
+// Row operations
+function addRow() {
+  const o = {};
+  cols.forEach(c => { o[c] = c === LM_COL ? nowStr() : ''; });
+  rows.push(o);
+  pushHist('Add row');
+  render();
+  scheduleWrite();
+}
+
+function deleteRow(ri, e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (editCell && editCell.ri === ri) { editCell = null; }
+  rows.splice(ri, 1);
+  pushHist('Delete row ' + (ri + 1));
+  render();
+  scheduleWrite();
+}
+
+// Column operations
+function addColAt(afterIdx) {
+  showPrompt('New column name', 'Column ' + (cols.length + 1), name => {
+    if (!name) return;
+    const col = uniqueName(name);
+    cols.splice(afterIdx + 1, 0, col);
+    rows.forEach(r => { r[col] = ''; });
+    pushHist('Add column "' + col + '"');
+    populateSelects();
+    render();
+    scheduleWrite();
+  });
+}
+
+function renameCol(ci) {
+  if (cols[ci] === LM_COL) { toast('"Last Modified" is a system column and cannot be renamed'); return; }
+  showPrompt('Rename column', cols[ci], newName => {
+    if (!newName || newName === cols[ci]) return;
+    const safe = uniqueName(newName, ci);
+    const old  = cols[ci];
+    rows.forEach(r => { r[safe] = r[old] ?? ''; delete r[old]; });
+    if (groupBy === old) groupBy = safe;
+    if (sortCol === old) sortCol = safe;
+    cols[ci] = safe;
+    pushHist(`Rename "${old}" → "${safe}"`);
+    populateSelects();
+    render();
+    scheduleWrite();
+  });
+}
+
+function deleteCol(ci) {
+  if (cols[ci] === LM_COL) { toast('"Last Modified" is a system column and cannot be deleted'); return; }
+  if (cols.length === 1) { toast('Cannot delete the last column'); return; }
+  const col = cols[ci];
+  cols.splice(ci, 1);
+  rows.forEach(r => { delete r[col]; });
+  if (groupBy === col) groupBy = '';
+  if (sortCol === col) sortCol = '';
+  pushHist(`Delete column "${col}"`);
+  populateSelects();
+  render();
+  scheduleWrite();
+}
+
+function insertColAt(ci, side) {
+  const pos = side === 'right' ? ci + 1 : ci;
+  showPrompt('New column name', 'Column ' + (cols.length + 1), name => {
+    if (!name) return;
+    const col = uniqueName(name);
+    cols.splice(pos, 0, col);
+    rows.forEach(r => { r[col] = ''; });
+    pushHist(`Insert column "${col}"`);
+    populateSelects();
+    render();
+    scheduleWrite();
+  });
+}
+
+function uniqueName(name, skipIdx = -1) {
+  const rest = cols.filter((_, i) => i !== skipIdx);
+  if (!rest.includes(name)) return name;
+  let n = 2;
+  while (rest.includes(name + ' ' + n)) n++;
+  return name + ' ' + n;
+}
+
+// ── Column context menu ───────────────────────────────────────────────────────
+function openColMenu(ci, btn, e) {
+  e.stopPropagation();
+  menuCol = ci;
+  const menu = document.getElementById('colMenu');
+  const r = btn.getBoundingClientRect();
+  menu.style.left = r.left + 'px';
+  menu.style.top  = (r.bottom + 4) + 'px';
+  menu.style.display = 'block';
+  btn.classList.add('open');
+}
+
+function closeColMenu() {
+  document.getElementById('colMenu').style.display = 'none';
+  document.querySelectorAll('.th-kebab.open').forEach(b => b.classList.remove('open'));
+}
+
+function cm_sort(dir)    { closeColMenu(); const c = cols[menuCol]; document.getElementById('sortColSel').value = c; document.getElementById('sortDirSel').value = dir; applyView(); }
+function cm_rename()     { closeColMenu(); renameCol(menuCol); }
+function cm_insert(side) { closeColMenu(); insertColAt(menuCol, side); }
+function cm_delete()     { closeColMenu(); deleteCol(menuCol); }
+
+// ── Toolbar / view ────────────────────────────────────────────────────────────
+function applyView() {
+  groupBy = document.getElementById('groupSel').value;
+  sortCol = document.getElementById('sortColSel').value;
+  sortDir = document.getElementById('sortDirSel').value;
+  render();
+}
+
+function thSortClick(col) {
+  const ss = document.getElementById('sortColSel');
+  const sd = document.getElementById('sortDirSel');
+  if (sortCol === col) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    sd.value = sortDir;
+  } else {
+    sortCol = col;
+    sortDir = 'asc';
+    ss.value = col;
+    sd.value = 'asc';
+  }
+  render();
+}
+
+function populateSelects() {
+  const opts = '<option value="">None</option>' +
+    cols.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  document.getElementById('groupSel').innerHTML   = opts;
+  document.getElementById('sortColSel').innerHTML = opts;
+  document.getElementById('groupSel').value   = cols.includes(groupBy) ? groupBy : '';
+  document.getElementById('sortColSel').value = cols.includes(sortCol) ? sortCol : '';
+  groupBy = document.getElementById('groupSel').value;
+  sortCol = document.getElementById('sortColSel').value;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function getSorted() {
+  const r = rows.slice();
+  if (!sortCol) return r;
+  r.sort((a, b) => {
+    const av = a[sortCol] ?? '', bv = b[sortCol] ?? '';
+    const an = parseFloat(av), bn = parseFloat(bv);
+    const isNum = av !== '' && bv !== '' && !isNaN(an) && !isNaN(bn);
+    const cmp = isNum
+      ? an - bn
+      : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
+    return sortDir === 'desc' ? -cmp : cmp;
+  });
+  return r;
+}
+
+function render() {
+  const hasCols = cols.length > 0;
+  document.getElementById('dropZone').style.display    = hasCols ? 'none' : 'flex';
+  document.getElementById('tblContainer').style.display = hasCols ? 'block' : 'none';
+
+  if (!hasCols) { updateStatus(); return; }
+
+  const sorted = getSorted();
+  let h = '<div class="tbl-wrap"><table><thead><tr>';
+
+  // Row number header
+  h += `<th class="th-num"><div class="th-inner" style="justify-content:center">#</div></th>`;
+
+  // Column headers
+  cols.forEach((c, ci) => {
+    const active = c === sortCol;
+    const arrowSvg = active
+      ? (sortDir === 'asc'
+          ? `<svg class="sort-arrow on" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>`
+          : `<svg class="sort-arrow on" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`)
+      : `<svg class="sort-arrow" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>`;
+    h += `<th data-ci="${ci}">
+      <div class="th-inner">
+        <div class="th-sort-btn" onclick="thSortClick('${esc(c)}')" ondblclick="renameCol(${ci})" title="Click: sort · Double-click: rename">
+          <span class="th-name">${esc(c)}</span>${arrowSvg}
+        </div>
+        <span class="th-kebab" onclick="openColMenu(${ci},this,event)" title="Column options">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/>
+          </svg>
+        </span>
+      </div>
+      <div class="th-resize" onmousedown="startResize(event,this)"></div>
+    </th>`;
+  });
+
+  // Add column button
+  h += `<th class="th-add" style="width:38px">
+    <div class="add-col-btn" onclick="addColAt(${cols.length - 1})" title="Add column">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </div>
+  </th>`;
+  h += '</tr></thead><tbody>';
+
+  if (!groupBy) {
+    // Flat view
+    sorted.forEach((row, di) => {
+      const ri = rows.indexOf(row);
+      h += makeDataRow(row, ri, di + 1, '');
+    });
+  } else {
+    // Grouped view — build order from sorted data, assign pastel colors
+    const order = [];
+    const map   = {};
+    sorted.forEach(row => {
+      const key = String(row[groupBy] ?? '(blank)');
+      if (!map[key]) { map[key] = []; order.push(key); }
+      map[key].push(row);
+    });
+
+    let dispNum = 0;
+    order.forEach((key, gi) => {
+      const gRows    = map[key];
+      const isCol    = !!collapsed[key];
+      const colCount = cols.length + 2;
+      const p        = PASTELS[gi % PASTELS.length];
+
+      h += `<tr class="g-hdr" data-gkey="${esc(key)}"
+        style="--g-bg:${p.bg};--g-border:${p.border}">
+        <td colspan="${colCount}"
+          style="background:${p.bg};border-top:2px solid ${p.border};border-bottom:1px solid ${p.border};border-left:3px solid ${p.border}">
+          <div class="g-cell" onclick="toggleGroup(this)">
+            <span class="g-arrow${isCol ? ' closed' : ''}"
+              style="background:${p.badge}">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="${p.text}" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+            <span class="g-lbl" style="color:${p.text}">${esc(groupBy)}: </span>
+            <span class="g-lbl">${esc(key)}</span>
+            <span class="g-cnt" style="background:${p.badge};color:${p.text}">${gRows.length}</span>
+          </div>
+        </td>
+      </tr>`;
+      gRows.forEach(row => {
+        const ri = rows.indexOf(row);
+        h += makeDataRow(row, ri, ++dispNum, isCol ? ' g-row-hidden' : '', p);
+      });
+    });
+  }
+
+  // Add row button row
+  h += `<tr class="add-row-tr">
+    <td colspan="${cols.length + 2}">
+      <div class="add-row-btn" onclick="addRow()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add row
+      </div>
+    </td>
+  </tr>`;
+
+  h += '</tbody></table></div>';
+  document.getElementById('tblContainer').innerHTML = h;
+  updateStatus();
+}
+
+function makeDataRow(row, ri, num, cls, p) {
+  let h = `<tr class="${cls}" data-ri="${ri}">`;
+  const numStyle = p ? `style="border-left:3px solid ${p.border};color:${p.text}"` : '';
+  h += `<td class="td-num" ${numStyle}>${num}</td>`;
+  cols.forEach(c => {
+    const v = row[c] ?? '';
+    // Pastel bg on the grouped-by column (matches the group's color)
+    // Subtle tint on the sorted-by column
+    let bg = '';
+    if (p && c === groupBy) bg = p.bg;
+    else if (sortCol && c === sortCol) bg = '#f5f3ff';
+    const styleAttr = bg ? `style="background:${bg}"` : '';
+    h += `<td ${styleAttr} ondblclick="startEdit(this,'${esc(c)}',${ri})">${makeCellHTML(v, c, ri)}</td>`;
+  });
+  h += `<td class="td-num"></td></tr>`;
+  return h;
+}
+
+// Toggle a group by reading its key from the data attribute
+function toggleGroup(cellEl) {
+  const key = cellEl.closest('tr.g-hdr').dataset.gkey;
+  collapsed[key] = !collapsed[key];
+  // Re-render just the collapsed/expanded rows without full rebuild
+  const arrow = cellEl.querySelector('.g-arrow');
+  if (arrow) arrow.classList.toggle('closed', collapsed[key]);
+
+  // Walk sibling rows until the next group header
+  let sibling = cellEl.closest('tr.g-hdr').nextElementSibling;
+  while (sibling && !sibling.classList.contains('g-hdr')) {
+    if (!sibling.classList.contains('add-row-tr')) {
+      sibling.classList.toggle('g-row-hidden', collapsed[key]);
+    }
+    sibling = sibling.nextElementSibling;
+  }
+}
+
+// ── Status / indicators ───────────────────────────────────────────────────────
+function updateStatus() {
+  document.getElementById('sbRows').textContent = rows.length + ' rows';
+  document.getElementById('sbCols').textContent = cols.length + ' columns';
+  if (groupBy) {
+    const n = new Set(rows.map(r => r[groupBy])).size;
+    document.getElementById('sbGroups').textContent = n + ' groups';
+  } else {
+    document.getElementById('sbGroups').textContent = '';
+  }
+}
+
+function setStatus(state) {
+  const dot  = document.getElementById('statusDot');
+  const text = document.getElementById('sbStatus');
+  const map = {
+    writing: ['writing', 'Saving…'],
+    saved:   ['',        IS_SERVER && filePath ? 'Saved to disk' : 'Ready'],
+    error:   ['writing', 'Save error'],
+    opening: ['writing', 'Opening…'],
+    ready:   ['',        'Ready'],
+  };
+  const [cls, label] = map[state] || ['', 'Ready'];
+  dot.className = 'status-dot' + (cls ? ' ' + cls : '');
+  text.textContent = label;
+}
+
+// ── Column resize ─────────────────────────────────────────────────────────────
+function startResize(e, handle) {
+  e.preventDefault(); e.stopPropagation();
+  const th = handle.closest('th');
+  const x0 = e.clientX, w0 = th.offsetWidth;
+  handle.classList.add('active');
+  const mv = e => { th.style.width = Math.max(60, w0 + e.clientX - x0) + 'px'; };
+  const up = () => {
+    document.removeEventListener('mousemove', mv);
+    document.removeEventListener('mouseup', up);
+    handle.classList.remove('active');
+  };
+  document.addEventListener('mousemove', mv);
+  document.addEventListener('mouseup', up);
+}
+
+// ── Prompt modal ──────────────────────────────────────────────────────────────
+let promptCb = null;
+function showPrompt(title, defaultVal, cb) {
+  promptCb = cb;
+  document.getElementById('promptTitle').textContent = title;
+  document.getElementById('promptInput').value = defaultVal;
+  openOverlay('promptModal');
+  setTimeout(() => { const i = document.getElementById('promptInput'); i.focus(); i.select(); }, 60);
+}
+function commitPrompt() {
+  const val = document.getElementById('promptInput').value.trim();
+  closeOverlay('promptModal');
+  if (promptCb) { const cb = promptCb; promptCb = null; cb(val); }
+}
+
+// ── Overlay helpers ───────────────────────────────────────────────────────────
+function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+function overlayBgClick(e, id) { if (e.target.id === id) closeOverlay(id); }
+
+// ── CSV helpers ───────────────────────────────────────────────────────────────
+function csvParse(text) {
+  const out = [];
+  let row = [], f = '', inQ = false;
+  const push = () => { row.push(f); f = ''; };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], n = text[i + 1];
+    if (inQ) {
+      if (c === '"' && n === '"') { f += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else f += c;
+    } else {
+      if      (c === '"')                     inQ = true;
+      else if (c === ',')                     push();
+      else if (c === '\r' && n === '\n')      { push(); out.push(row); row = []; i++; }
+      else if (c === '\n' || c === '\r')      { push(); out.push(row); row = []; }
+      else                                     f += c;
+    }
+  }
+  push();
+  if (row.length > 1 || row[0] !== '') out.push(row);
+  return out;
+}
+
+function csvCell(v) {
+  v = String(v ?? '');
+  return /[,"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function deepClone(o)  { return JSON.parse(JSON.stringify(o)); }
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 2400);
+}
+
+// ── Global event listeners ────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undoAction(); }
+  if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); redoAction(); }
+  if (mod && e.key.toLowerCase() === 'o')                { e.preventDefault(); openFile(); }
+  if (e.key === 'Escape') {
+    cancelEdit();
+    closeColMenu();
+    closeOverlay('promptModal');
+    closeOverlay('newTableModal');
+    document.getElementById('histPanel').style.display = 'none';
+  }
+  // Enter submits open modals
+  if (e.key === 'Enter') {
+    if (document.getElementById('promptModal').classList.contains('open'))    commitPrompt();
+    if (document.getElementById('newTableModal').classList.contains('open'))  createNewTable();
+  }
+});
+
+document.addEventListener('click', e => {
+  // Commit active edit if clicking outside it
+  if (editCell && !editCell.td.contains(e.target)) commitEdit();
+  // Close column menu unless clicking inside it or on a kebab button
+  if (!e.target.closest('#colMenu') && !e.target.closest('.th-kebab')) closeColMenu();
+  // Close history panel unless clicking inside it or on its toggle button
+  if (!e.target.closest('#histPanel') && !e.target.closest('#btnHistBtn')) {
+    document.getElementById('histPanel').style.display = 'none';
+  }
+});
+</script>
+</body>
+</html>
