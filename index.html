@@ -417,6 +417,12 @@ const PASTELS = [
 let cols = [];
 let rows = [];
 let fileName = '';
+let fileHandle = null;
+
+// File System Access API gives true live read/write after the user picks a CSV.
+// It does not use localStorage/sessionStorage/cookies.
+const HAS_FSA = typeof window.showOpenFilePicker === 'function' &&
+                typeof window.showSaveFilePicker === 'function';
 
 // View state
 let groupBy  = '';
@@ -520,17 +526,44 @@ function jumpToHist(pos) {
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 async function openFile() {
+  if (HAS_FSA) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{
+          description: 'CSV files',
+          accept: { 'text/csv': ['.csv'] }
+        }]
+      });
+      await loadFromFileHandle(handle);
+      toast('Opened with live save enabled');
+    } catch (err) {
+      if (err && err.name !== 'AbortError') toast('Open error: ' + err.message);
+    }
+    return;
+  }
+
   document.getElementById('fileInput').click();
+}
+
+async function loadFromFileHandle(handle) {
+  const file = await handle.getFile();
+  if (!file.name.toLowerCase().endsWith('.csv')) { toast('Only .csv files are supported'); return; }
+  fileHandle = handle;
+  fileName = file.name;
+  const text = await file.text();
+  parseAndLoad(text, 'Open ' + fileName);
 }
 
 async function handleFileInput(input) {
   const file = input.files[0];
   if (!file) return;
   input.value = '';
+  fileHandle = null;
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
-  toast('Loaded locally — use Export to save changes');
+  toast('Browser fallback opened read-only — use Export to save');
 }
 
 function dzOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('drag'); }
@@ -538,13 +571,29 @@ function dzLeave() { document.getElementById('dropZone').classList.remove('drag'
 async function dzDrop(e) {
   e.preventDefault();
   dzLeave();
+
+  const item = e.dataTransfer.items && e.dataTransfer.items[0];
+  if (HAS_FSA && item && typeof item.getAsFileSystemHandle === 'function') {
+    try {
+      const handle = await item.getAsFileSystemHandle();
+      if (handle && handle.kind === 'file') {
+        await loadFromFileHandle(handle);
+        toast('Opened with live save enabled');
+        return;
+      }
+    } catch (_) {
+      // Fall through to normal File loading below.
+    }
+  }
+
   const file = e.dataTransfer.files[0];
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.csv')) { toast('Only .csv files are supported'); return; }
+  fileHandle = null;
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
-  toast('Loaded locally — use Export to save changes');
+  toast('Drag-drop opened read-only — use Open CSV for live save');
 }
 
 function parseAndLoad(text, histDesc) {
@@ -581,17 +630,46 @@ function onDataReady(histDesc) {
 
 function updateModeUI() {
   document.getElementById('btnExport').style.display = cols.length ? 'inline-flex' : 'none';
+  setStatus(fileHandle ? 'saved' : 'ready');
 }
 
-function scheduleWrite() {
-  setStatus('ready');
-}
-
-// Export (standalone fallback)
-function exportCSV() {
+function csvText() {
   const lines = [cols.map(csvCell).join(',')];
   rows.forEach(r => lines.push(cols.map(c => csvCell(r[c] ?? '')).join(',')));
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  return lines.join('\r\n');
+}
+
+let writeTimer = null;
+let writeChain = Promise.resolve();
+
+function scheduleWrite() {
+  if (!fileHandle) { setStatus('ready'); return; }
+  clearTimeout(writeTimer);
+  setStatus('writing');
+  writeTimer = setTimeout(doWrite, 250);
+}
+
+async function doWrite() {
+  if (!fileHandle) { setStatus('ready'); return; }
+  const content = csvText();
+  writeChain = writeChain.then(async () => {
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  });
+
+  try {
+    await writeChain;
+    setStatus('saved');
+  } catch (err) {
+    setStatus('error');
+    toast('Live save error: ' + err.message);
+  }
+}
+
+// Manual backup/export. Live-save files also keep this as an extra option.
+function exportCSV() {
+  const blob = new Blob([csvText()], { type: 'text/csv' });
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(blob),
     download: fileName || 'export.csv'
@@ -613,11 +691,33 @@ async function createNewTable() {
   if (!colLines.length) { toast('Add at least one column'); return; }
   closeOverlay('newTableModal');
 
+  if (HAS_FSA) {
+    try {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: 'untitled.csv',
+        types: [{
+          description: 'CSV files',
+          accept: { 'text/csv': ['.csv'] }
+        }]
+      });
+      fileName = fileHandle.name || 'untitled.csv';
+      cols = colLines;
+      rows = [];
+      onDataReady('New table: ' + fileName);
+      await doWrite();
+      toast('Created with live save enabled');
+    } catch (err) {
+      if (err && err.name !== 'AbortError') toast('Create error: ' + err.message);
+    }
+    return;
+  }
+
+  fileHandle = null;
   fileName = 'untitled.csv';
   cols = colLines;
   rows = [];
   onDataReady('New table');
-  toast('Created locally — use Export to save as a file');
+  toast('Browser fallback created read-only — use Export to save');
 }
 
 // ── Mutations ────────────────────────────────────────────────────────────────
@@ -1007,7 +1107,7 @@ function setStatus(state) {
   const text = document.getElementById('sbStatus');
   const map = {
     writing: ['writing', 'Saving…'],
-    saved:   ['',        'Ready'],
+    saved:   ['',        fileHandle ? 'Saved live to CSV' : 'Ready'],
     opening: ['writing', 'Opening…'],
     ready:   ['',        'Ready'],
   };
