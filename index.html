@@ -360,10 +360,10 @@ tr.add-row-tr td{background:var(--bg);border-top:1px solid var(--border)}
 Name
 Type
 Value</textarea>
-    <p class="modal-hint">You'll choose where to save the CSV file next.</p>
+    <p class="modal-hint">This creates an in-memory table. Use Export to save it as a CSV file.</p>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeOverlay('newTableModal')">Cancel</button>
-      <button class="btn btn-primary" onclick="createNewTable()">Choose location →</button>
+      <button class="btn btn-primary" onclick="createNewTable()">Create table</button>
     </div>
   </div>
 </div>
@@ -385,11 +385,6 @@ Value</textarea>
 
 <script>
 'use strict';
-
-// ── Capability detection ──────────────────────────────────────────────────────
-// File System Access API works on HTTPS and localhost (Chrome/Edge 86+).
-// Falls back gracefully to file-input + export on file:// or Firefox.
-const HAS_FSA = typeof window.showOpenFilePicker === 'function';
 
 // ── Last Modified ─────────────────────────────────────────────────────────────
 const LM_COL = 'Last Modified';
@@ -422,7 +417,6 @@ const PASTELS = [
 let cols = [];
 let rows = [];
 let fileName = '';
-let filePath = '';       // absolute path on disk (server mode only)
 
 // View state
 let groupBy  = '';
@@ -524,48 +518,19 @@ function jumpToHist(pos) {
   toast('Jumped to: ' + hist[pos].desc);
 }
 
-// ── Server API helper ─────────────────────────────────────────────────────────
-async function api(endpoint, body) {
-  try {
-    const res = await fetch('/api/' + endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    return await res.json();
-  } catch (e) {
-    return { error: e.message };
-  }
-}
-
 // ── File I/O ──────────────────────────────────────────────────────────────────
 async function openFile() {
-  if (IS_SERVER) {
-    // Server mode: native OS file dialog via Python/tkinter
-    setStatus('opening');
-    const r = await api('open-dialog', {});
-    setStatus('ready');
-    if (r.cancelled) return;
-    if (r.error) { toast('Error: ' + r.error); return; }
-    filePath = r.path;
-    fileName = r.name;
-    parseAndLoad(r.content, 'Open ' + fileName);
-  } else {
-    // Standalone mode: use hidden file input
-    document.getElementById('fileInput').click();
-  }
+  document.getElementById('fileInput').click();
 }
 
-// Fallback for standalone (file://) mode
 async function handleFileInput(input) {
   const file = input.files[0];
   if (!file) return;
   input.value = '';
-  filePath = '';
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
-  if (!IS_SERVER) toast('Standalone mode — use Export to save changes');
+  toast('Loaded locally — use Export to save changes');
 }
 
 function dzOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('drag'); }
@@ -576,11 +541,10 @@ async function dzDrop(e) {
   const file = e.dataTransfer.files[0];
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.csv')) { toast('Only .csv files are supported'); return; }
-  filePath = '';
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
-  if (!IS_SERVER) toast('Drag-drop is read-only here — use Export to save');
+  toast('Loaded locally — use Export to save changes');
 }
 
 function parseAndLoad(text, histDesc) {
@@ -616,27 +580,11 @@ function onDataReady(histDesc) {
 }
 
 function updateModeUI() {
-  // Show Export button in standalone mode or when no file path (drag-drop)
-  const showExport = !IS_SERVER || !filePath;
-  document.getElementById('btnExport').style.display = (cols.length && showExport) ? 'inline-flex' : 'none';
+  document.getElementById('btnExport').style.display = cols.length ? 'inline-flex' : 'none';
 }
-
-// ── Write to disk (server mode) ───────────────────────────────────────────────
-let writeTimer = null;
 
 function scheduleWrite() {
-  if (!IS_SERVER || !filePath) return;
-  clearTimeout(writeTimer);
-  setStatus('writing');
-  writeTimer = setTimeout(doWrite, 400);
-}
-
-async function doWrite() {
-  const lines = [cols.map(csvCell).join(',')];
-  rows.forEach(r => lines.push(cols.map(c => csvCell(r[c] ?? '')).join(',')));
-  const r = await api('write', { path: filePath, content: lines.join('\r\n') });
-  if (r.error) { setStatus('error'); toast('Save error: ' + r.error); }
-  else setStatus('saved');
+  setStatus('ready');
 }
 
 // Export (standalone fallback)
@@ -665,29 +613,14 @@ async function createNewTable() {
   if (!colLines.length) { toast('Add at least one column'); return; }
   closeOverlay('newTableModal');
 
-  if (IS_SERVER) {
-    // Pick a save location via native dialog
-    const r = await api('save-dialog', { name: 'untitled.csv' });
-    if (r.cancelled) return;
-    if (r.error) { toast('Error: ' + r.error); return; }
-    filePath = r.path;
-    fileName = r.name;
-    cols = colLines;
-    rows = [];
-    onDataReady('New table: ' + fileName);
-    await doWrite();
-  } else {
-    // Standalone: create in memory, let user Export
-    filePath = '';
-    fileName = 'untitled.csv';
-    cols = colLines;
-    rows = [];
-    onDataReady('New table');
-    toast('Created in memory — use Export to save as a file');
-  }
+  fileName = 'untitled.csv';
+  cols = colLines;
+  rows = [];
+  onDataReady('New table');
+  toast('Created locally — use Export to save as a file');
 }
 
-// ── Mutations (every one calls render + scheduleWrite) ────────────────────────
+// ── Mutations ────────────────────────────────────────────────────────────────
 
 // Cell edit
 function startEdit(td, col, ri) {
@@ -1074,8 +1007,7 @@ function setStatus(state) {
   const text = document.getElementById('sbStatus');
   const map = {
     writing: ['writing', 'Saving…'],
-    saved:   ['',        IS_SERVER && filePath ? 'Saved to disk' : 'Ready'],
-    error:   ['writing', 'Save error'],
+    saved:   ['',        'Ready'],
     opening: ['writing', 'Opening…'],
     ready:   ['',        'Ready'],
   };
