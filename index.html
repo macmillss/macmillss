@@ -541,12 +541,12 @@ async function openFile() {
         }]
       });
 
-      await loadFromFileHandle(handle);
-
-      // Ask once during the Open CSV click. Some Edge/Chrome contexts still return
-      // denied here; the visible Enable live save button asks again from its own click.
+      // IMPORTANT: ask for File Editing immediately after the picker returns,
+      // before reading/parsing/rendering the file. This keeps the permission
+      // request inside the same Open CSV user action in Edge/Chrome.
       const canWrite = await requestReadWritePermission(handle);
-      liveWriteEnabled = !!canWrite;
+
+      await loadFromFileHandle(handle, canWrite);
       updateModeUI();
 
       if (liveWriteEnabled) toast('Opened with live save enabled');
@@ -589,7 +589,7 @@ async function enableLiveSaveFromButton() {
   updateModeUI();
 
   if (!liveWriteEnabled) {
-    toast('Permission not granted — check browser Site permissions → File editing');
+    toast('Permission not granted — click the lock icon → File editing → Allow, then try again');
     return;
   }
 
@@ -597,11 +597,11 @@ async function enableLiveSaveFromButton() {
   await doWrite();
 }
 
-async function loadFromFileHandle(handle) {
+async function loadFromFileHandle(handle, canWrite = false) {
   const file = await handle.getFile();
   if (!file.name.toLowerCase().endsWith('.csv')) { toast('Only .csv files are supported'); return; }
   fileHandle = handle;
-  liveWriteEnabled = false;
+  liveWriteEnabled = !!canWrite;
   fileName = file.name;
   const text = await file.text();
   parseAndLoad(text, 'Open ' + fileName);
