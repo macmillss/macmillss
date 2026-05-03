@@ -535,6 +535,14 @@ async function openFile() {
           accept: { 'text/csv': ['.csv'] }
         }]
       });
+
+      const canWrite = await ensureReadWritePermission(handle);
+      if (!canWrite) {
+        fileHandle = null;
+        toast('Write permission was not granted — reopen and allow file editing');
+        return;
+      }
+
       await loadFromFileHandle(handle);
       toast('Opened with live save enabled');
     } catch (err) {
@@ -544,6 +552,22 @@ async function openFile() {
   }
 
   document.getElementById('fileInput').click();
+}
+
+async function ensureReadWritePermission(handle) {
+  // Browsers only allow the write permission prompt during a real user action,
+  // so ask immediately after Open CSV / New table instead of waiting for autosave.
+  if (!handle || typeof handle.queryPermission !== 'function' || typeof handle.requestPermission !== 'function') {
+    return true;
+  }
+
+  const opts = { mode: 'readwrite' };
+  try {
+    if (await handle.queryPermission(opts) === 'granted') return true;
+    return await handle.requestPermission(opts) === 'granted';
+  } catch (_) {
+    return false;
+  }
 }
 
 async function loadFromFileHandle(handle) {
@@ -577,6 +601,12 @@ async function dzDrop(e) {
     try {
       const handle = await item.getAsFileSystemHandle();
       if (handle && handle.kind === 'file') {
+        const canWrite = await ensureReadWritePermission(handle);
+        if (!canWrite) {
+          fileHandle = null;
+          toast('Drag-drop opened read-only — use Open CSV and allow file editing for live save');
+          throw new Error('Write permission not granted');
+        }
         await loadFromFileHandle(handle);
         toast('Opened with live save enabled');
         return;
@@ -663,7 +693,7 @@ async function doWrite() {
     setStatus('saved');
   } catch (err) {
     setStatus('error');
-    toast('Live save error: ' + err.message);
+    toast('Live save blocked — reopen with Open CSV and allow file editing');
   }
 }
 
@@ -700,6 +730,12 @@ async function createNewTable() {
           accept: { 'text/csv': ['.csv'] }
         }]
       });
+      const canWrite = await ensureReadWritePermission(fileHandle);
+      if (!canWrite) {
+        fileHandle = null;
+        toast('Write permission was not granted — table was not created');
+        return;
+      }
       fileName = fileHandle.name || 'untitled.csv';
       cols = colLines;
       rows = [];
@@ -1110,6 +1146,7 @@ function setStatus(state) {
     saved:   ['',        fileHandle ? 'Saved live to CSV' : 'Ready'],
     opening: ['writing', 'Opening…'],
     ready:   ['',        'Ready'],
+    error:   ['writing', 'Save blocked'],
   };
   const [cls, label] = map[state] || ['', 'Ready'];
   dot.className = 'status-dot' + (cls ? ' ' + cls : '');
